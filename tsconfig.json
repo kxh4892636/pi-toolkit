@@ -1,9 +1,16 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
-  "files": [],
-  "references": [
-    { "path": "./apps/wiki" },
-    { "path": "./packages/docusaurus-plugin-link" },
-    { "path": "./packages/nano-flow" }
-  ]
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "rootDir": ".",
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.tsbuildinfo",
+    "declaration": true,
+    "esModuleInterop": true,
+    "isolatedModules": true
+  },
+  "include": ["src", "vite.config.ts"]
 }
