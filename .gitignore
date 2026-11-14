@@ -1,0 +1,10 @@
+# build output and local state
+node_modules
+dist
+dist-ssr
+coverage
+*.tgz
+*.tsbuildinfo
+.vite-hooks
+test-results
+playwright-report
