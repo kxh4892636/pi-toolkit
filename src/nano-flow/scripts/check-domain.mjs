@@ -20,6 +20,7 @@ import {
 } from "./lib/base.mjs";
 import { readDocument } from "./lib/checks.mjs";
 import { propagateRenames, setFrontmatterScalar, writeFixed } from "./lib/fix.mjs";
+import { collectDirtyPaths, pacingWarnings } from "./lib/pacing.mjs";
 import {
   renderTracked,
   renderNotesIndex,
@@ -181,7 +182,7 @@ const scanWorkflows = (ctx, directory) => {
   return documents;
 };
 
-const scanPlan = (ctx, planDirectory, planName) => {
+const scanPlan = (ctx, planDirectory, planName, lifecycle) => {
   const specFile = path.join(planDirectory, "spec.md");
   const spec = readDocument(ctx, specFile, "spec", { required: true });
   const names = new Set();
@@ -284,6 +285,7 @@ const scanPlan = (ctx, planDirectory, planName) => {
       }
     }
   }
+  pacingWarnings(ctx, { lifecycle, notes }, ctx.dirty);
   if (spec !== null) {
     let specStatus = spec.data.status;
     const expected = notes.every((note) => note.status === "pending")
@@ -326,7 +328,7 @@ const scanPlan = (ctx, planDirectory, planName) => {
   if (exists(planDirectory)) {
     writeGenerated(ctx, path.join(planDirectory, "notes_index.md"), `${renderNotesIndex(notes)}\n`);
   }
-  return { name: planName, notes, spec };
+  return { name: planName, lifecycle, notes, spec };
 };
 
 const scanPlans = (ctx, domainPath) => {
@@ -384,7 +386,14 @@ const scanPlans = (ctx, domainPath) => {
       ) {
         continue;
       }
-      plans.push(scanPlan(ctx, path.join(lifecyclePath, planEntry.name), planEntry.name));
+      plans.push(
+        scanPlan(
+          ctx,
+          path.join(lifecyclePath, planEntry.name),
+          planEntry.name,
+          lifecycleEntry.name,
+        ),
+      );
     }
   }
   return plans;
@@ -497,6 +506,8 @@ export const checkWorkspace = (rootDirectory, options = {}) => {
     domainFilter: options.domain,
     planFilter: options.plan,
     strict: options.strict !== false,
+    // 只取一次：git 调用有 2s 上限，逐 Plan 收集会把失败概率乘上 Plan 数。
+    dirty: collectDirtyPaths(rootDir, path.relative(rootDir, domainsRoot).replaceAll("\\", "/")),
   };
 
   if (!exists(domainsRoot)) {

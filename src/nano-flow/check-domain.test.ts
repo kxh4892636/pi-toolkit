@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,6 +59,18 @@ const check = (workspace: string) => checkWorkspace(workspace, { domainsPath: do
 
 const rulesOf = (issues: readonly { rule: string }[]): string[] =>
   issues.map((issue) => issue.rule);
+
+const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" }).status === 0;
+
+const git = (root: string, args: string[]): void => {
+  const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} 失败：${result.stderr}`);
+};
+
+const commitAll = (root: string, message: string): void => {
+  git(root, ["add", "-A"]);
+  git(root, ["-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-m", message]);
+};
 
 describe("自动修复：spec 状态按 note 派生", () => {
   it("把与 note 不符的 status 改回来并记一条修复，不报 status 错误", () => {
@@ -285,5 +298,39 @@ describe("自动修复：块标量里的空行不会让折叠反复抄写", () =
     expect(read(workspace, domainRoot, "demo", "plans", "active", planName, "001-甲.md")).toBe(
       text,
     );
+  });
+});
+
+describe.skipIf(!gitAvailable)("pending 未提交告警", () => {
+  const noteFields = "name: '001-甲'\ndescription: '甲'\nstatus: 'pending'\nnext_step: '继续'";
+
+  it("改了正文但仍是 pending 时报警，提交后消失，连跑不产生修复", () => {
+    const workspace = seedWorkspace();
+    writeSpec(workspace, "pending");
+    writeNote(workspace, "001-甲.md", noteFields);
+    git(workspace, ["init"]);
+    commitAll(workspace, "init");
+    // 首次 check 会补生成 CONTEXT-MAP / 追踪表 / notes_index，先落成基线。
+    check(workspace);
+    commitAll(workspace, "generated");
+
+    writeFileSync(
+      join(planDirOf(workspace), "001-甲.md"),
+      frontmatter(noteFields) + "正文".repeat(80),
+      "utf8",
+    );
+    const first = check(workspace);
+    expect(first.ok).toBe(true);
+    expect(rulesOf(first.warnings).filter((rule) => rule === "pacing")).toHaveLength(1);
+    expect(first.fixed).toHaveLength(0);
+    expect(first.updated).toHaveLength(0);
+
+    const second = check(workspace);
+    expect(second.fixed).toHaveLength(0);
+    expect(second.updated).toHaveLength(0);
+    expect(rulesOf(second.warnings).filter((rule) => rule === "pacing")).toHaveLength(1);
+
+    commitAll(workspace, "note");
+    expect(rulesOf(check(workspace).warnings).filter((rule) => rule === "pacing")).toHaveLength(0);
   });
 });
